@@ -936,7 +936,7 @@ void process()
                !ext_buf.empty() && !odometry_buf.empty())
 		{
 			//********************* * 100******************************************************
-			// step 1: pop up subscribed data
+			// step 1: pop up subscribed data  找到相近时间戳
 			m_buf.lock();
 			while (!corner_last_buf.empty() && corner_last_buf.front()->header.stamp.toSec() < surf_last_buf.front()->header.stamp.toSec())
 				corner_last_buf.pop();
@@ -1310,6 +1310,7 @@ int main(int argc, char **argv)
     pose_keyframes_3d->clear();
     laser_keyframes_6d.poses.clear();
 
+    //按ctrl+C触发
     signal(SIGINT, sigintHandler);
 
     std::thread mapping_process{process};

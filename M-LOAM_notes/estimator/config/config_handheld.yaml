@@ -3,6 +3,9 @@
 # Multiple thread support
 multiple_thread: 0
 
+lm_opt_enable: 1
+
+
 # segmmentation
 segment_cloud: 1 # RHD02lab: 1, RHD03garden: 1, RHD04building: 1
 horizon_scan: 1800

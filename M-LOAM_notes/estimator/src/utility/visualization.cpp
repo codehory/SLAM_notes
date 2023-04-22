@@ -157,6 +157,7 @@ void printStatistics(const Estimator &estimator, double t)
 
 void pubOdometry(Estimator &estimator, const double &time)
 {
+    //粗标定状态时发布所有雷达的里程计
     if (ESTIMATE_EXTRINSIC == 2)
     {
         for (auto n = 0; n < NUM_OF_LASER; n++)
@@ -183,7 +184,7 @@ void pubOdometry(Estimator &estimator, const double &time)
             estimator.v_laser_path_[n].poses.push_back(laser_pose);
             v_pub_laser_path[n].publish(estimator.v_laser_path_[n]);
         }
-    } else
+    } else //否则仅发布主雷达的里程计
     {
         Pose pose_laser_cur;
         if (estimator.solver_flag_ == Estimator::SolverFlag::INITIAL)

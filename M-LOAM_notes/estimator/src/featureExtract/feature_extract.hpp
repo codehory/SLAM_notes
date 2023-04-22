@@ -132,10 +132,10 @@ public:
 /*!
  * @brief 找corner的两个近临点，两个点连成一条直线，用于计算当前点到该直线的距离
  * @tparam PointType
- * @param kdtree_corner_from_scan corner建立的kdtree
- * @param cloud_scan
- * @param cloud_data
- * @param pose_local
+ * @param kdtree_corner_from_scan  上一帧corner建立的kdtree
+ * @param cloud_scan 上一帧的corner特征
+ * @param cloud_data 当前帧的corner特征
+ * @param pose_local 初始位姿
  * @param features
  */
 template <typename PointType>
@@ -373,19 +373,22 @@ void FeatureExtract::matchSurfFromScan(const typename pcl::KdTreeFLANN<PointType
 
             if (min_point_ind2 >= 0 && min_point_ind3 >= 0)
             {
+                //距离当前帧i点最近的上一帧中的j点
                 Eigen::Vector3f last_point_j(cloud_scan.points[closest_point_ind].x,
                                              cloud_scan.points[closest_point_ind].y,
                                              cloud_scan.points[closest_point_ind].z);
+                //上一帧中与j同一条扫描线上距离j最近的点l
                 Eigen::Vector3f last_point_l(cloud_scan.points[min_point_ind2].x,
                                              cloud_scan.points[min_point_ind2].y,
                                              cloud_scan.points[min_point_ind2].z);
+                //上一帧中j附近扫描线上距离j最近的点m
                 Eigen::Vector3f last_point_m(cloud_scan.points[min_point_ind3].x,
                                              cloud_scan.points[min_point_ind3].y,
                                              cloud_scan.points[min_point_ind3].z);
                 /// 两个向量叉乘，得到平面法向量
                 Eigen::Vector3f w = (last_point_j - last_point_l).cross(last_point_j - last_point_m);
                 w.normalize();
-                ///[question] why not write it like this: float negative_OA_dot_norm = (last_point_j - last_point_l).dot(w);
+                ///Ax+By+Cz+D=0 D = -(Ax+By+Cz) D = -w.dot(last_point_j) negative_OA_dot_norm = D
                 float negative_OA_dot_norm = -w.dot(last_point_j);
                 float pd2 = -(w.x() * point_sel.x + w.y() * point_sel.y + w.z() * point_sel.z + negative_OA_dot_norm); // distance
                 float s = 1 - 0.9f * fabs(pd2) / sqrt(sqrSum(point_sel.x, point_sel.y, point_sel.z));
@@ -564,6 +567,17 @@ void FeatureExtract::matchCornerFromMap(const typename pcl::KdTreeFLANN<PointTyp
     features.resize(cloud_cnt);
 }
 
+/*!
+ * @brief  地图平面点特征匹配
+ * @tparam PointType
+ * @param kdtree_surf_from_map  kdtree
+ * @param cloud_map             主雷达pivot_idx帧坐标系下的局部地图
+ * @param cloud_data            第i个雷达坐标系下的特征点
+ * @param pose_local            第i个雷达坐标系相对于主雷达pivot_idx帧坐标系的变换
+ * @param features              匹配得到的地图特征点
+ * @param N_NEIGH               搜索邻域
+ * @param CHECK_FOV
+ */
 // should be performed once after several gradient descents
 template <typename PointType>
 void FeatureExtract::matchSurfFromMap(const typename pcl::KdTreeFLANN<PointType>::Ptr &kdtree_surf_from_map,
@@ -623,6 +637,8 @@ void FeatureExtract::matchSurfFromMap(const typename pcl::KdTreeFLANN<PointType>
             if (plane_valid)
             {
                 bool is_in_laser_fov = false;
+
+                //判断一下该点是否属于当前Lidar的可视范围内.只要点在x轴±60°的范围内都认为是FOV中的点(作者这么做是因为Lidar里程计的估计结果太不准确了，只能概略的取一个较大的范围)
                 if (CHECK_FOV)
                 {
                     PointType transform_pos;
@@ -637,6 +653,7 @@ void FeatureExtract::matchSurfFromMap(const typename pcl::KdTreeFLANN<PointType>
                     float squared_side2 = sqrSum(point_on_z_axis_trans.x - point_sel.x,
                                                   point_on_z_axis_trans.y - point_sel.y,
                                                   point_on_z_axis_trans.z - point_sel.z);
+                    //余弦定理 -sqrt(3) < 2cos<TPy,TC> < sqrt(3)
                     float check1 = 100.0f + squared_side1 - squared_side2 - 10.0f * sqrt(3.0f) * sqrt(squared_side1);
                     float check2 = 100.0f + squared_side1 - squared_side2 + 10.0f * sqrt(3.0f) * sqrt(squared_side1);
                     // within +-60 degree
@@ -647,6 +664,7 @@ void FeatureExtract::matchSurfFromMap(const typename pcl::KdTreeFLANN<PointType>
                 {
                     is_in_laser_fov = true;
                 }
+
                 if (is_in_laser_fov)
                 {
                     // pd2 (distance) smaller, s larger
@@ -669,6 +687,19 @@ void FeatureExtract::matchSurfFromMap(const typename pcl::KdTreeFLANN<PointType>
     features.resize(cloud_cnt);
 }
 
+/*!
+ * @brief 找到corner在地图中匹配的线特征，feature为直线上的两个点
+ * @tparam PointType
+ * @param kdtree_corner_from_map    map的kdtree
+ * @param cloud_map                 地图
+ * @param point_ori                 当前点
+ * @param pose_local                局部位姿
+ * @param feature                   输出特征
+ * @param idx                       当前点的索引
+ * @param N_NEIGH                   搜索近邻点个数
+ * @param CHECK_FOV
+ * @return
+ */
 template <typename PointType>
 bool FeatureExtract::matchCornerPointFromMap(const typename pcl::KdTreeFLANN<PointType>::Ptr &kdtree_corner_from_map,
                                              const typename pcl::PointCloud<PointType> &cloud_map,
@@ -689,8 +720,10 @@ bool FeatureExtract::matchCornerPointFromMap(const typename pcl::KdTreeFLANN<Poi
     int num_neighbors = N_NEIGH;
 
     PointType point_sel;
+    //将当前点变换到map系
     pointAssociateToMap(point_ori, point_sel, pose_local);
     kdtree_corner_from_map->nearestKSearch(point_sel, num_neighbors, point_search_idx, point_search_sq_dis);
+    //如果搜索到的近邻点中距离最远的点都小于设定的匹配距离阈值MIN_MATCH_SQ_DIS
     if (point_search_sq_dis[num_neighbors - 1] < MIN_MATCH_SQ_DIS)
     {
         // calculate the coefficients of edge points
@@ -704,12 +737,14 @@ bool FeatureExtract::matchCornerPointFromMap(const typename pcl::KdTreeFLANN<Poi
             center += tmp;
             near_corners.push_back(tmp);
         }
+        //求均值
         center /= (1.0 * num_neighbors);
 
         Eigen::Matrix3f cov_mat = Eigen::Matrix3f::Zero();
         for (int j = 0; j < num_neighbors; j++)
         {
             Eigen::Vector3f tmp_zero_mean = near_corners[j] - center;
+            //计算协方差矩阵
             cov_mat += tmp_zero_mean * tmp_zero_mean.transpose();
         }
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> esolver(cov_mat);
@@ -717,6 +752,7 @@ bool FeatureExtract::matchCornerPointFromMap(const typename pcl::KdTreeFLANN<Poi
         // if is indeed line feature
         // note Eigen library sort eigenvalues in increasing order
         Eigen::Vector3f unit_direction = esolver.eigenvectors().col(2);
+        //线特征
         if (esolver.eigenvalues()[2] > 3 * esolver.eigenvalues()[1])
         {
             bool is_in_laser_fov = false;
@@ -792,6 +828,7 @@ bool FeatureExtract::matchCornerPointFromMap(const typename pcl::KdTreeFLANN<Poi
 
                 Eigen::Vector3f point_on_line = center;
                 Eigen::Vector3f X1, X2;
+                //给出直线方程上的两个点 https://blog.csdn.net/qq_32761549/article/details/125905914
                 X1 = 0.1 * unit_direction + point_on_line;
                 X2 = -0.1 * unit_direction + point_on_line;
 
@@ -814,6 +851,19 @@ bool FeatureExtract::matchCornerPointFromMap(const typename pcl::KdTreeFLANN<Poi
     return false;
 }
 
+/*!
+ * @brief 找到surf在地图中匹配的面特征 feature为面的法向量
+ * @tparam PointType
+ * @param kdtree_surf_from_map  map的kdtree
+ * @param cloud_map             地图
+ * @param point_ori             当前点
+ * @param pose_local            局部位姿
+ * @param feature               输出特征
+ * @param idx                   当前点的索引
+ * @param N_NEIGH               搜索近邻点个数
+ * @param CHECK_FOV
+ * @return
+ */
 template <typename PointType>
 bool FeatureExtract::matchSurfPointFromMap(const typename pcl::KdTreeFLANN<PointType>::Ptr &kdtree_surf_from_map,
                                            const typename pcl::PointCloud<PointType> &cloud_map,
@@ -847,11 +897,13 @@ bool FeatureExtract::matchSurfPointFromMap(const typename pcl::KdTreeFLANN<Point
             mat_A(j, 1) = cloud_map.points[point_search_idx[j]].y;
             mat_A(j, 2) = cloud_map.points[point_search_idx[j]].z;
         }
+        //使用eigen库求解Ax=b  平面方程Ax+By+Cz+D=0 除以D==> Ax+By+Cz+1=0 ==> Ax+By+Cz=-1 ==> Ax=b，求解超定方程
         Eigen::Vector3f norm = mat_A.colPivHouseholderQr().solve(mat_B);
         float negative_OA_dot_norm = 1 / norm.norm();
         norm.normalize();
 
         bool plane_valid = true;
+        //判断搜索到的近邻点是否为平面上的点
         for (int j = 0; j < num_neighbors; j++)
         {
             if (fabs(norm(0) * cloud_map.points[point_search_idx[j]].x +

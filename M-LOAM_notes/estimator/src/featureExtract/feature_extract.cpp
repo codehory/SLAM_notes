@@ -140,9 +140,9 @@ bool comp(int i, int j) { return (cloudCurvature[i] < cloudCurvature[j]); }
 
 /*!
  * @brief 基于曲率点云特征提取，方法和LOAM一样
- * @param laser_cloud_in
- * @param scan_info
- * @param cloud_feature
+ * @param laser_cloud_in  输入点云
+ * @param scan_info       scan信息
+ * @param cloud_feature   特征点云(laser_cloud, corner_points_sharp, corner_points_less_sharp, surf_points_flat, surf_points_less_flat)
  */
 void FeatureExtract::extractCloud(const PointICloud &laser_cloud_in,
                                   const ScanInfo &scan_info,

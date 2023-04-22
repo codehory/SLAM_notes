@@ -35,6 +35,7 @@
 
 using namespace std;
 
+///[note] 位姿类
 class Pose
 {
 public:

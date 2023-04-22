@@ -37,20 +37,55 @@ public:
         q_last_curr = Eigen::Quaterniond::Identity().slerp(s_, q_last_curr);
         t_last_curr = s_ * t_last_curr;
 
+        //平面法向量
         Eigen::Vector3d w(coeff_(0), coeff_(1), coeff_(2));
+        //直线方程中的D
         double d = coeff_(3);
+        //a = Ax+By+Cz+D
         double a = w.dot(q_last_curr * point_ + t_last_curr) + d;
+        //残差为点到平面的距离
         residuals[0] = a;
 
         if (jacobians)
         {
+            //将四元数转化为旋转矩阵
             Eigen::Matrix3d R = q_last_curr.toRotationMatrix();
             if (jacobians[0])
             {
                 Eigen::Map<Eigen::Matrix<double, 1, 7, Eigen::RowMajor>> jacobian_pose(jacobians[0]);
-                Eigen::Matrix<double, 1, 6> jaco; // [dy/dt, dy/dR, 1]
+                Eigen::Matrix<double, 1, 6> jaco; // [da/dt, da/dR, 1] 分别对平移量和旋转矩阵求偏导
                 jaco.setZero();
+                /*!
+                 * a = w.dot(q_last_curr * point_ + t_last_curr) + d 对平移量求偏导
+                 * da/dx = w.dot(d(q_last_curr * point_ + t_last_curr)/dx)  q_last_curr和d常量与x无关
+                 *       = w.dot(d(t_last_curr)/dx)  t_last_curr--> (x, y, z)
+                 *       = w.dot(1, 0, 0)
+                 *       = wx
+                 *同理：
+                 * da/dy = w.dot(0, 1, 0) = wy
+                 * da/dz = w.dot(0, 0, 1) = wz
+                 *
+                 * da/dt = w.transpose()
+                 *
+                 *
+                 *
+                 */
+
                 jaco.leftCols<3>() = w.transpose();
+                //Utility::skewSymmetric(point_)表示将向量point_转化为反对称矩阵,其作用是用于叉乘运算
+                // 即 skewSymmetric(point_)= 0 -v3  v2
+                //                          v3  0  -v1
+                //                         -v2  v1  0
+
+                //R的导数 = R* 旋转矢量的反对称矩阵
+
+                /*! https://zhuanlan.zhihu.com/p/156895046
+                 *   a = w.dot(q_last_curr * point_ + t_last_curr) + d 对旋转矩阵求偏导
+                 *   da/dR = w.dot(d(q_last_curr * point_)/dR)  t_last_curr, d与R无关
+                 *         = w.dot(-Rpoint_X)   公式 d(Rv)/dR = -RvX X表示反对称
+                 *         = -w.transpose() * R * Utility::skewSymmetric(point_)
+                 *
+                 */
                 jaco.rightCols<3>() = -w.transpose() * R * Utility::skewSymmetric(point_);
 
                 jacobian_pose.setZero();
@@ -61,6 +96,7 @@ public:
     }
 
     // TODO: check if derived jacobian == perturbation on the raw function
+    //用来验证当前定义的LidarScanPlaneNormFactor类中Evaluate函数中的解析求导是否正确
     void check(double **param)
     {
         double *res = new double[1];
@@ -94,6 +130,7 @@ public:
         Eigen::Matrix<double, 1, 6> num_jacobian;
 
         // add random perturbation
+        //添加随机扰动
         for (int k = 0; k < 6; k++)
         {
             Eigen::Quaterniond q_last_curr(param[0][6], param[0][3], param[0][4], param[0][5]);
@@ -102,7 +139,9 @@ public:
             t_last_curr = s_ * t_last_curr;
 
             int a = k / 3, b = k % 3;
+            //分别对三个轴加扰动
             Eigen::Vector3d delta = Eigen::Vector3d(b == 0, b == 1, b == 2) * eps;
+            //分别对平移量和旋转量加扰动
             if (a == 0)
                 t_last_curr += delta;
             else if (a == 1)
@@ -248,12 +287,16 @@ public:
         q_last_curr = Eigen::Quaterniond::Identity().slerp(s_, q_last_curr);
         t_last_curr = s_ * t_last_curr;
 
+        //lpa和lpb为两个近邻点
         Eigen::Vector3d lpa(coeff_(0), coeff_(1), coeff_(2));
         Eigen::Vector3d lpb(coeff_(3), coeff_(4), coeff_(5));
         Eigen::Vector3d lp = q_last_curr * point_ + t_last_curr;
 
+        //lp与lpa组成的向量叉乘lp与lpb组成的向量 表示：lp、lpa、lpb三个点组成的平行四边形的面积 参考:https://zhuanlan.zhihu.com/p/404326817
         Eigen::Vector3d nu = (lp - lpa).cross(lp - lpb);
+        //lpa与lpb组成的向量,为三角形的底
         Eigen::Vector3d de = lpa - lpb;
+        //计算点到直线的距离，为高
         residuals[0] = nu.x() / de.norm();
         residuals[1] = nu.y() / de.norm();
         residuals[2] = nu.z() / de.norm();
@@ -265,10 +308,29 @@ public:
             if (jacobians[0])
             {
                 Eigen::Map<Eigen::Matrix<double, 3, 7, Eigen::RowMajor>> jacobian_pose(jacobians[0]);
-                Eigen::Matrix<double, 3, 6> jaco; // [dy/dt, dy/dq, 1]
+                Eigen::Matrix<double, 3, 6> jaco; // [dy/dt, dy/dR, 1]
 
+                //分母与dt，dR无关，为常量
                 double eta = 1.0 / de.norm();
+                /*!
+                 *  对平移量求导dt  https://blog.csdn.net/weixin_43851636/article/details/125340140?spm=1001.2101.3001.6661.1&utm_medium=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-125340140-blog-103102216.pc_relevant_multi_platform_whitelistv3&depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-125340140-blog-103102216.pc_relevant_multi_platform_whitelistv3&utm_relevant_index=1
+                 *  d((lp-lpa)x(lp-lpb))/dt = -skew(lp-lpb)*(d(lp-lpa)/dt) + skew(lp-lpa)*(d(lp-lpb)/dt)  根据向量叉乘求导公式: d(UxV)/dW = -skew(V)*(dU/dW)+skew(U)*(dV/dW)
+                 *                          = -skew(lp-lpb)+skew(lp-lpa)   d(lp-lpa)/dt = 1
+                 *                          = skew(lpb-lp)+skew(lp-lpa)
+                 *                          = skew(lpb-lpa)
+                 *                          = -skew(lpa-lpb)
+                 */
+
                 jaco.leftCols<3>() = -eta * Utility::skewSymmetric(lpa - lpb);
+                /*!
+                 *
+                 * 对旋转矩阵求导dR
+                 * d((lp-lpa)x(lp-lpb))/dR = -skew(lp-lpb)*(d(lp-lpa)/dt) + skew(lp-lpa)*(d(lp-lpb)/dt)
+                 *                         = -skew(lp-lpb)*(-R*skew(point_)) + skew(lp-lpa)*(-R*skew(point_))   公式 d(Rv)/dR = -RvX X表示反对称
+                 *                         = skew(lp-lpb)*(R*skew(point_))-skew(lp-lpa)*(R*skew(point_))
+                 *                         = skew(lpa-lpb)*R*skew(point_)
+                 *
+                 */
                 jaco.rightCols<3>() = eta * Utility::skewSymmetric(lpa - lpb) * R * Utility::skewSymmetric(point_);
 
                 jacobian_pose.setZero();

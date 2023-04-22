@@ -151,12 +151,12 @@ class Estimator
 
     Pose pose_laser_prev_;
     // pose from laser at k=0 to laser at k=K
-    std::vector<Pose> pose_laser_cur_;
+    std::vector<Pose> pose_laser_cur_;//所有激光当前的绝对位姿(size = NUM_OF_LASER)
     // pose from laser at k=K-1 to laser at k=K
-    std::vector<Pose> pose_rlt_;
+    std::vector<Pose> pose_rlt_;//所有激光当前的相对位姿(size = NUM_OF_LASER)
 
-    std::vector<Eigen::Quaterniond> qbl_;
-    std::vector<Eigen::Vector3d> tbl_;
+    std::vector<Eigen::Quaterniond> qbl_; //外参四元数 vector对应多个雷达
+    std::vector<Eigen::Vector3d> tbl_;//外参平移量 vector对应多个雷达
     std::vector<double> tdbl_;
     std::vector<Eigen::Matrix<double, 6, 6> > covbl_;
 
@@ -164,25 +164,25 @@ class Estimator
     // xx[cir_buf_cnt_] indicates the newest variables and measurements
     bool ini_fixed_local_map_{};
 
-    size_t cir_buf_cnt_{};
+    size_t cir_buf_cnt_{};//循环buffer计数
 
-    CircularBuffer<Eigen::Quaterniond> Qs_;
-    CircularBuffer<Eigen::Vector3d> Ts_;
+    CircularBuffer<Eigen::Quaterniond> Qs_;//主雷达的四元数循环buffer (size = WINDOW_SIZE + 1)  绝对位姿 k=0 to k=K
+    CircularBuffer<Eigen::Vector3d> Ts_;//主雷达的平移量循环buffer (size = WINDOW_SIZE + 1) 绝对位姿 k=0 to k=K
     CircularBuffer<std_msgs::Header> Header_;
-    std::vector<CircularBuffer<common::PointICloud> > surf_points_stack_, corner_points_stack_;
+    std::vector<CircularBuffer<common::PointICloud> > surf_points_stack_, corner_points_stack_;//所有雷达的点云特征循环buffer (vector size = NUM_OF_LASER，buffer size = WINDOW_SIZE + 1)
     std::vector<CircularBuffer<int> > surf_points_stack_size_, corner_points_stack_size_;
 
     pcl::VoxelGrid<PointI> down_size_filter_corner_, down_size_filter_surf_;
 
     std::vector<common::PointICloud> surf_points_local_map_, surf_points_local_map_filtered_;
     std::vector<common::PointICloud> surf_points_pivot_map_;
-    std::vector<common::PointICloud> corner_points_local_map_, corner_points_local_map_filtered_;
+    std::vector<common::PointICloud> corner_points_local_map_, corner_points_local_map_filtered_; //corner_points_local_map_[n]: n号雷达在主雷达pivot下的local corner map
     std::vector<common::PointICloud> corner_points_pivot_map_;
 
     std::vector<std::vector<Pose> > pose_local_;
 
     double prev_time_{}, cur_time_{};
-    double td_{};
+    double td_{};//时间延时time delay
 
     int frame_cnt_{};
 
@@ -191,16 +191,16 @@ class Estimator
     LidarTracker lidar_tracker_;
     InitialExtrinsics initial_extrinsics_;
 
-    std::queue<std::pair<double, std::vector<cloudFeature> > > feature_buf_;
-    pair<double, std::vector<cloudFeature> > prev_feature_, cur_feature_;
+    std::queue<std::pair<double, std::vector<cloudFeature> > > feature_buf_; //点云特征队列，队列中每一个元素表示：某时刻，所有雷达的特征点云
+    pair<double, std::vector<cloudFeature> > prev_feature_, cur_feature_;//所有雷达上一帧、当前帧的特征
     std::vector<std::vector<std::vector<PointPlaneFeature> > > surf_map_features_, corner_map_features_;
     std::vector<std::vector<PointPlaneFeature> > cumu_surf_map_features_, cumu_corner_map_features_;
     size_t cumu_surf_feature_cnt_, cumu_corner_feature_cnt_;
 
     std::vector<std::vector<std::vector<size_t> > > sel_surf_feature_idx_, sel_corner_feature_idx_;
 
-    double **para_pose_{};
-    double **para_ex_pose_{};
+    double **para_pose_{}; //ceres主雷达在滑窗内待优化的绝对位姿变量
+    double **para_ex_pose_{}; //ceres外参变量(N个雷达相对于主雷达的外参)
     double *para_td_{};
 
     Eigen::VectorXd eig_thre_;

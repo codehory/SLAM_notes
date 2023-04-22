@@ -67,8 +67,8 @@ extern int SEGMENT_VALID_LINE_NUM;
 extern float SEGMENT_THETA;
 
 // LiDAR
-extern size_t IDX_REF;
-extern size_t NUM_OF_LASER;
+extern size_t IDX_REF; //主雷达的索引
+extern size_t NUM_OF_LASER; ///< 激光雷达的个数
 extern size_t N_SCANS;
 
 extern int WINDOW_SIZE;
@@ -168,11 +168,10 @@ public:
     size_t laser_idx_;
     Eigen::Vector3d point_;  ///< 当前点坐标
 
-    Eigen::VectorXd coeffs_; ///< 对于corner:包含两个点坐标， 一个是当前点的在上一帧中找到的最近点，一个是当前点在上一帧中找到的邻近线束上最近的点(与当前点的scan_id不同)
-                             ///< 对于surf: 前三个参数是平面法向量
+    Eigen::VectorXd coeffs_;
 
     Eigen::MatrixXd jaco_;
-    char type_;
+    char type_; ///< 特征类型： c: corner s: surf
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };

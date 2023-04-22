@@ -77,6 +77,11 @@ void dataProcessCallback(const sensor_msgs::PointCloud2ConstPtr &cloud0_msg,
     m_buf.unlock();
 }
 
+/*!
+ * @brief 将ros点云消息转换成pcl格式点云
+ * @param cloud_msg
+ * @return
+ */
 pcl::PointCloud<pcl::PointXYZ> getCloudFromMsg(const sensor_msgs::PointCloud2ConstPtr &cloud_msg)
 {
     pcl::PointCloud<pcl::PointXYZ> laser_cloud;
@@ -101,14 +106,18 @@ void sync_process()
             time = all_cloud_buf[0].front()->header.stamp.toSec();
             header = all_cloud_buf[0].front()->header;
             stringstream ss;
+            //取buf中最靠前的点云
             for (size_t i = 0; i < NUM_OF_LASER; i++)
             {
                 v_laser_cloud[i] = getCloudFromMsg(all_cloud_buf[i].front());
                 ss << v_laser_cloud[i].size() << " ";
             }
+            //取完后从buf中pop出
             for (size_t i = 0; i < all_cloud_buf.size(); i++) all_cloud_buf[i].pop();
             printf("size of finding laser_cloud: %s\n", ss.str().c_str());
         }
+
+        // 为了保证实时性，继续清空buf
         while (!all_cloud_buf[0].empty())
         {
             frame_drop_cnt++;
@@ -124,10 +133,12 @@ void sync_process()
         }
         m_buf.unlock();
 
+        //检查从buf中取到的点云是否为空
         bool empty_check = false;
         for (size_t i = 0; i < NUM_OF_LASER; i++)
             if (v_laser_cloud[i].size() == 0) empty_check = true;
 
+            //以all_cloud_buf[0]的时间戳作为两个点云的时间戳
         if (!empty_check) estimator.inputCloud(time, v_laser_cloud);
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
@@ -224,6 +235,7 @@ int main(int argc, char **argv)
     std::thread cloud_visualizer_thread;
     if (PCL_VIEWER)
     {
+        //点云可视化线程
         cloud_visualizer_thread = std::thread(&PlaneNormalVisualizer::Spin, &estimator.plane_normal_vis_);
     }
     ros::Rate loop_rate(100);

@@ -250,24 +250,30 @@ void Estimator::inputCloud(const double &t, const std::vector<PointCloud> &v_las
         for (size_t i = 0; i < v_laser_cloud_in.size(); i++)
         {
             PointICloud laser_cloud;
+            //转换点云类型，将每个点的时间戳赋值到intensity通道
             f_extract_.calTimestamp(v_laser_cloud_in[i], laser_cloud);
 
-            PointICloud laser_cloud_segment, laser_cloud_outlier;
-            ScanInfo scan_info(N_SCANS, SEGMENT_CLOUD);
+            PointICloud laser_cloud_segment, laser_cloud_outlier; // laser_cloud_segment：按线束排序好的剔除噪点后的点云 laser_cloud_outlier：噪声点云
+            ScanInfo scan_info(N_SCANS, SEGMENT_CLOUD); //scan信息，记录每条scan起始+5与结束-5的索引
             if (ESTIMATE_EXTRINSIC != 0) scan_info.segment_flag_ = false;
+            //点云分割
             img_segment_.segmentCloud(laser_cloud, laser_cloud_segment, laser_cloud_outlier, scan_info);
 
             feature_frame_ptr[i] = new cloudFeature;
+            //点云特征提取
             f_extract_.extractCloud(laser_cloud_segment, scan_info, *feature_frame_ptr[i]);
+            //特征点云中加入噪点
             feature_frame_ptr[i]->insert(pair<std::string, PointICloud>("laser_cloud_outlier", laser_cloud_outlier));
         }
 
-        for (size_t i = 0; i < NUM_OF_LASER; i++) 
+        //特征汇总
+        for (size_t i = 0; i < NUM_OF_LASER; i++)
         {
             feature_frame[i] = *feature_frame_ptr[i];
             total_corner_feature_ += feature_frame[i]["corner_points_less_sharp"].size();
             total_surf_feature_ += feature_frame[i]["surf_points_less_flat"].size();
         }
+        //内存释放
         for (auto &frame_ptr : feature_frame_ptr) delete frame_ptr;    
     }
 
@@ -280,12 +286,17 @@ void Estimator::inputCloud(const double &t, const std::vector<PointCloud> &v_las
     if (!MULTIPLE_THREAD) processMeasurements();
 }
 
+/*!
+ * @brief Estimator入口 对输入点云进行分割，特征提取
+ * @param t                时间戳
+ * @param v_laser_cloud_in 多雷达同一时刻的点云
+ */
 void Estimator::inputCloud(const double &t, const std::vector<PointITimeCloud> &v_laser_cloud_in)
 {
     assert(v_laser_cloud_in.size() == NUM_OF_LASER);
 
     common::timing::Timer mea_pre_timer("odom_mea_pre");
-    std::vector<cloudFeature> feature_frame(NUM_OF_LASER);
+    std::vector<cloudFeature> feature_frame(NUM_OF_LASER);//多个雷达点云帧的特征数组(存放cloudFeature)
 
     if (NUM_OF_LASER == 1)
     {
@@ -304,20 +315,20 @@ void Estimator::inputCloud(const double &t, const std::vector<PointITimeCloud> &
     } 
     else
     {
-        std::vector<cloudFeature *> feature_frame_ptr(NUM_OF_LASER);
+        std::vector<cloudFeature *> feature_frame_ptr(NUM_OF_LASER);//多个雷达点云帧的特征数组(存放cloudFeature指针)
         #pragma omp parallel for num_threads(NUM_OF_LASER)
         for (size_t i = 0; i < v_laser_cloud_in.size(); i++)
         {
             PointICloud laser_cloud;
-            f_extract_.calTimestamp(v_laser_cloud_in[i], laser_cloud);
+            f_extract_.calTimestamp(v_laser_cloud_in[i], laser_cloud);//计算每帧点云中每个点的时间戳
 
             PointICloud laser_cloud_segment, laser_cloud_outlier;
             ScanInfo scan_info(N_SCANS, SEGMENT_CLOUD);
             if (ESTIMATE_EXTRINSIC != 0) scan_info.segment_flag_ = false;
-            img_segment_.segmentCloud(laser_cloud, laser_cloud_segment, laser_cloud_outlier, scan_info);
+            img_segment_.segmentCloud(laser_cloud, laser_cloud_segment, laser_cloud_outlier, scan_info);//点云分割
 
             feature_frame_ptr[i] = new cloudFeature;
-            f_extract_.extractCloud(laser_cloud_segment, scan_info, *feature_frame_ptr[i]);
+            f_extract_.extractCloud(laser_cloud_segment, scan_info, *feature_frame_ptr[i]);//特征提取
             feature_frame_ptr[i]->insert(pair<std::string, PointICloud>("laser_cloud_outlier", laser_cloud_outlier));
         }
 
@@ -409,6 +420,7 @@ void Estimator::undistortMeasurements(const std::vector<Pose> &pose_undist)
 
 void Estimator::process()
 {
+    //初始化
     if (!b_system_inited_)
     {
         b_system_inited_ = true;
@@ -425,7 +437,9 @@ void Estimator::process()
             {
                 cloudFeature &cur_cloud_feature = cur_feature_.second[n];
                 cloudFeature &prev_cloud_feature = prev_feature_.second[n];
+                //计算当前帧相对于上一帧的位姿变换
                 pose_rlt_[n] = lidar_tracker_.trackCloud(prev_cloud_feature, cur_cloud_feature, pose_rlt_[n]);
+                //相对变换累计到绝对位姿变换
                 pose_laser_cur_[n] = pose_laser_cur_[n] * pose_rlt_[n];
             }
             printf("lidarTracker: %fms\n", tracker_timer.Stop() * 1000);
@@ -434,6 +448,7 @@ void Estimator::process()
 
             // initialize extrinsics
             printf("calibrating extrinsic param, sufficient movement is needed\n");
+            //当添加的相对pose没有大的突变并且buf数量等于滑动窗口数量时
             if (initial_extrinsics_.addPose(pose_rlt_) && (cir_buf_cnt_ == WINDOW_SIZE))
             {
                 // TicToc t_calib_ext;
@@ -468,6 +483,7 @@ void Estimator::process()
         }
         else if (ESTIMATE_EXTRINSIC != 2)
         {
+            //当粗标定完成后，仅对主雷达进行特征匹配，计算主雷达的里程计
             cloudFeature &cur_cloud_feature = cur_feature_.second[IDX_REF];
             cloudFeature &prev_cloud_feature = prev_feature_.second[IDX_REF];
             pose_rlt_[IDX_REF] = lidar_tracker_.trackCloud(prev_cloud_feature, cur_cloud_feature, pose_rlt_[IDX_REF]);
@@ -484,6 +500,7 @@ void Estimator::process()
     Header_[cir_buf_cnt_].stamp = ros::Time(cur_feature_.first);
     for (size_t n = 0; n < NUM_OF_LASER; n++)
     {
+        //特征点下采样
         PointICloud &corner_points = cur_feature_.second[n]["corner_points_less_sharp"];
         down_size_filter_corner_.setInputCloud(boost::make_shared<PointICloud>(corner_points));
         down_size_filter_corner_.filter(corner_points_stack_[n][cir_buf_cnt_]);
@@ -503,14 +520,22 @@ void Estimator::process()
         {
             printf("[INITIAL]\n");
             slideWindow();
+
+/*
+            //TODO BUG 当cir_buf_cnt = WINDOW_SIZE-1时，会cir_buf_cnt++，再执行一次滑窗，此时Qs_[cir_buf_cnt],Ts_[cir_buf_cnt]值还没计算，为下一帧的值
             if (cir_buf_cnt_ < WINDOW_SIZE)
             {
                 cir_buf_cnt_++;
                 if (cir_buf_cnt_ == WINDOW_SIZE)
                 {
-                    slideWindow(); 
+                    slideWindow();
                 }
             }
+*/
+            //TODO 将上面注释的原代码修改为下面这一行代码
+            cir_buf_cnt_ = (cir_buf_cnt_ < WINDOW_SIZE) ? (++cir_buf_cnt_) : cir_buf_cnt_;
+
+
             if ((cir_buf_cnt_ == WINDOW_SIZE) && (ESTIMATE_EXTRINSIC != 2))
             {
                 solver_flag_ = NON_LINEAR;
@@ -529,6 +554,7 @@ void Estimator::process()
         }
     }
 
+    //更新上一时刻特征
     // pass cur_feature to prev_feature
     prev_time_ = cur_time_;
     prev_feature_.first = prev_time_;
@@ -586,6 +612,7 @@ void Estimator::process()
         //     pcl::io::savePCDFileASCII(ss.str(), cur_feature_.second[n]["laser_cloud"]);
         // }
 
+        //更新上一时刻位姿
         pose_laser_prev_ = pose_laser_cur;
     }
 }
@@ -614,7 +641,7 @@ void Estimator::optimizeMap()
     options.max_num_iterations = NUM_ITERATIONS;
     options.max_solver_time_in_seconds = SOLVER_TIME;
 
-    vector2Double();
+    vector2Double();//给Xv，Xe赋值
 
     // ****************************************************
     // ceres: add parameter block
@@ -624,10 +651,12 @@ void Estimator::optimizeMap()
     {
         PoseLocalParameterization *local_parameterization = new PoseLocalParameterization();
         local_parameterization->setParameter();
+        //添加主雷达滑窗内位姿变量，维度为7
         problem.AddParameterBlock(para_pose_[i], SIZE_POSE, local_parameterization);
         local_param_ids.push_back(local_parameterization);
         para_ids.push_back(para_pose_[i]);
     }
+    //这个函数是设置参数块为常数，不被优化
     problem.SetParameterBlockConstant(para_pose_[0]);
 
     for (size_t i = 0; i < NUM_OF_LASER; i++)
@@ -669,10 +698,10 @@ void Estimator::optimizeMap()
     std::vector<ceres::internal::ResidualBlock *> res_ids_proj;
     if (ESTIMATE_EXTRINSIC == 1)
     {
-        buildCalibMap();
+        buildCalibMap();//构建用于在线标定的局部地图
         std::cout << common::YELLOW << "optimization with online calibration" << common::RESET << std::endl;
         
-        if (PRIOR_FACTOR)
+        if (PRIOR_FACTOR)//外参变量(q,t)与外参初值变量(q0,t0)之间的残差，[t-t0, 2(q0.inv * q)]或者 [t-t0, Log({R0}^-1 * R)]
         {
             for (size_t n = 0; n < NUM_OF_LASER; n++)
             {
@@ -695,9 +724,9 @@ void Estimator::optimizeMap()
                     LidarPureOdomPlaneNormFactor *f = new LidarPureOdomPlaneNormFactor(feature.point_, feature.coeffs_, 1.0);
                     ceres::internal::ResidualBlock *res_id = problem.AddResidualBlock(f,
                                                                                       loss_function,
-                                                                                      para_pose_[0],
-                                                                                      para_pose_[i - pivot_idx],
-                                                                                      para_ex_pose_[IDX_REF]);
+                                                                                      para_pose_[0],//主雷达pivot pose, Xv[0]
+                                                                                      para_pose_[i - pivot_idx],//主雷达依次在Xv[]中除了pivot帧pose
+                                                                                      para_ex_pose_[IDX_REF]);//主雷达到主雷达的外参，const value
                     res_ids_proj.push_back(res_id);
                     if (CHECK_JACOBIAN)
                     {
@@ -1068,7 +1097,7 @@ void Estimator::buildCalibMap()
 {
     common::timing::Timer build_map_timer("odom_build_calib_map");
     int pivot_idx = WINDOW_SIZE - OPT_WINDOW_SIZE;
-    Pose pose_pivot(Qs_[pivot_idx], Ts_[pivot_idx]);
+    Pose pose_pivot(Qs_[pivot_idx], Ts_[pivot_idx]);//[0,pivot_idx-1]为fix状态，不参与优化，[pivot_id, WINDOW_SIZE-1]为待优化变量
 
     // build the whole local map using all poses except the newest pose
     surf_points_local_map_.clear();
@@ -1087,11 +1116,28 @@ void Estimator::buildCalibMap()
         for (size_t i = 0; i < WINDOW_SIZE + 1; i++)
         {
             Pose pose_i(Qs_[i], Ts_[i]);
-            pose_local_[n][i] = Pose(pose_pivot.T_.inverse() * pose_i.T_ * pose_ext.T_);
+            /*!
+             * 将主雷达坐标系下滑动窗口内的变量通过外参转换到各雷达坐标系下，得到各雷达坐标系下的滑动窗口内各变量相对于主雷达坐标系pose_pivot变量的位姿(比较难理解，公式比较清楚)
+             *
+             *      lidar_0 orig      -1     lidar_0 orig      lidar_0  K
+             *  ( T                 )    * T              *  T
+             *      lidar_0 pivot_idx        lidar_0 K         lidar_i  K
+             *
+             *      lidar_0 pivot_idx        lidar_0 orig      lidar_0  K
+             * =  T                     *  T              *  T
+             *      lidar_0 orig             lidar_0 K         lidar_i  K
+             *
+             *      lidar_0 pivot_idx
+             * =  T
+             *      lidar_i  K
+             */
+            pose_local_[n][i] = Pose(pose_pivot.T_.inverse() * pose_i.T_ * pose_ext.T_);//主雷达pivot到各雷达n(包括自己)i帧的变换
             PointICloud surf_points_trans, corner_points_trans;
             if (i == WINDOW_SIZE) continue;
             // if ((n != IDX_REF) && (i > pivot_idx)) continue;
 
+            //此处正确，副雷达的local map是用主雷达在窗口内的所有帧构建的，后面只对副雷达pivot帧下的points在local map中找correspondances.
+            //把滑窗内的特征点转换到pivot_idx帧坐标系下
             pcl::transformPointCloud(surf_points_stack_[IDX_REF][i], surf_points_trans, pose_local_[IDX_REF][i].T_.cast<float>());
             // for (auto &p: surf_points_trans.points) p.intensity = i;
             surf_points_local_map_[n] += surf_points_trans;
@@ -1130,8 +1176,8 @@ void Estimator::buildCalibMap()
         kdtree_corner_points_local_map->setInputCloud(boost::make_shared<PointICloud>(corner_points_local_map_filtered_[n]));
         for (size_t i = pivot_idx; i < WINDOW_SIZE + 1; i++)
         {
-            if (((n == IDX_REF) && (i == pivot_idx))
-             || ((n != IDX_REF) && (i != pivot_idx))) continue;
+            if (((n == IDX_REF) && (i == pivot_idx))               //忽略主雷达的pivot帧
+             || ((n != IDX_REF) && (i != pivot_idx))) continue;    //忽略副雷达不是pivot帧的所有帧，即只考虑副雷达的pivot帧。对于副雷达只找在pivot帧在local map下的correspondances,其他帧不管。
             int n_neigh = (n == IDX_REF ? 5:10);
             f_extract_.matchSurfFromMap(kdtree_surf_points_local_map,
                                         surf_points_local_map_filtered_[n],
@@ -1516,6 +1562,7 @@ void Estimator::goodFeatureMatching(const pcl::KdTreeFLANN<PointI>::Ptr &kdtree_
     // printf("num of all features: %lu, selected features: %lu\n", num_all_features, num_use_features);
 }
 
+//将当前的观测与位姿放到滑窗的末尾,如果buf满了，会把最老的数据抛掉
 // push new state and measurements in the sliding window
 // move the localmap in the pivot frame to the pivot+1 frame, and remove the first point cloud
 void Estimator::slideWindow()
@@ -1535,6 +1582,8 @@ void Estimator::slideWindow()
     // printf("slide window: %fms\n", t_solid_window.toc());
 }
 
+
+//数据类型转换，将vector转成ceres中使用的数组变量
 void Estimator::vector2Double()
 {
     int pivot_idx = WINDOW_SIZE - OPT_WINDOW_SIZE;

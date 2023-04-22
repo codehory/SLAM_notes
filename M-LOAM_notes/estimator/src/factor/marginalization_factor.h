@@ -63,24 +63,26 @@ class MarginalizationInfo
     ~MarginalizationInfo();
     int localSize(int size) const;
     int globalSize(int size) const;
-    void addResidualBlockInfo(ResidualBlockInfo *residual_block_info);
+    void addResidualBlockInfo(ResidualBlockInfo *residual_block_info);//添加残差块相关信息（优化变量，待marg的变量）
     void preMarginalize(); // calculate Jacobian of each residual, and update the parameter_block_data
     void marginalize(); // pose, m, n: dimension of states; marginalized states; optimized states
     std::vector<double *> getParameterBlocks(std::unordered_map<long, double *> &addr_shift);
 
-    std::vector<ResidualBlockInfo *> factors;
-    int m, n; // m: number of marginalized states; n: number of optimized states; n = localSize(parameter_block_size) - m
-    std::unordered_map<long, int> parameter_block_size; //global size, optimized <memory, id>
-    int sum_block_size;
-    std::unordered_map<long, int> parameter_block_idx; //local size, marginalized <memory, id>
-    std::unordered_map<long, double *> parameter_block_data; // optimized data <memory, data>
+    std::vector<ResidualBlockInfo *> factors;//所有观测项
+    int m, n; // m: number of marginalized states; n: number of optimized states; n = localSize(parameter_block_size) - m  m为要边缘化的变量个数，n为要保留下来的变量个数
 
+    std::unordered_map<long, int> parameter_block_size; //global size, optimized <memory, id> <优化变量内存地址,优化变量的长度>
+    int sum_block_size;
+    std::unordered_map<long, int> parameter_block_idx; //local size, marginalized <memory, id> <优化变量内存地址,优化变量的id>
+    std::unordered_map<long, double *> parameter_block_data; // optimized data <memory, data>  <优化变量内存地址,优化变量对应的double指针类型的数据>
+
+    //分别对应上面三个map
     std::vector<int> keep_block_size; //global size
     std::vector<int> keep_block_idx;  //local size
     std::vector<double *> keep_block_data;
 
-    Eigen::MatrixXd linearized_jacobians;
-    Eigen::VectorXd linearized_residuals;
+    Eigen::MatrixXd linearized_jacobians;//边缘化后从信息矩阵恢复出来的雅可比矩阵
+    Eigen::VectorXd linearized_residuals;//边缘化后从信息矩阵恢复出来的残差向量
     const double eps = 1e-8;
     bool valid;
 

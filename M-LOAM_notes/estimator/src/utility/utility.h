@@ -76,6 +76,7 @@ inline void TransformToStart(const PointType &pi, PointType &po, const Pose &pos
     po.intensity = pi.intensity;
 }
 
+//首先把点统一到起始时刻坐标系下(TransformToStart),再通过反变换,得到结束时刻坐标系下的点
 // project all distorted lidar points on the current frame
 // a: last frame; b: current frame; c: frame for points capturing
 // p^a = T(s)*p^c, p^b = T^(-1)*T(s)*p^c
@@ -99,6 +100,13 @@ inline void TransformToEnd(const PointType &pi, PointType &po, const Pose &pose,
     po.intensity = pi.intensity;
 }
 
+/*!
+ * @brief 点云点坐标变换
+ * @tparam PointType
+ * @param pi 输入点云点
+ * @param po 输出点云点
+ * @param pose 变换位姿
+ */
 template <typename PointType>
 inline void pointAssociateToMap(const PointType &pi, PointType &po, const Pose &pose)
 {

@@ -20,6 +20,13 @@ LidarTracker::LidarTracker()
     std::cout << "Tracker begin" << std::endl;
 }
 
+/*!
+ * @brief 根据提取的特征，构建点到面、直线的距离残差，计算当前帧相对于上一帧的位姿
+ * @param prev_cloud_feature
+ * @param cur_cloud_feature
+ * @param pose_ini 初始估计位姿
+ * @return
+ */
 Pose LidarTracker::trackCloud(const cloudFeature &prev_cloud_feature,
                               const cloudFeature &cur_cloud_feature,
                               const Pose &pose_ini)
@@ -54,13 +61,15 @@ Pose LidarTracker::trackCloud(const cloudFeature &prev_cloud_feature,
         std::vector<PointPlaneFeature> corner_scan_features, surf_scan_features;
         Pose pose_local = Pose(Eigen::Quaterniond(para_pose[6], para_pose[3], para_pose[4], para_pose[5]),
                                Eigen::Vector3d(para_pose[0], para_pose[1], para_pose[2]));
-        
+        //找到匹配的corner特征
         f_extract_.matchCornerFromScan(kdtree_corner_last, *corner_points_last, *corner_points_sharp, pose_local, corner_scan_features);
+        //找到匹配的surf特征
         f_extract_.matchSurfFromScan(kdtree_surf_last, *surf_points_last, *surf_points_flat, pose_local, surf_scan_features);
         
         size_t corner_num = corner_scan_features.size();
         size_t surf_num = surf_scan_features.size();
         // printf("[mloam] iter:%d, use_corner:%d, use_surf:%d\n", iter_cnt, corner_num, surf_num);
+        //如果找到的特征总数小于10, 说明这两帧不相关
         if (corner_num + surf_num < 10)
         {
             printf("[lidar_tracker] less correspondence! *************************************************\n");
@@ -74,6 +83,8 @@ Pose LidarTracker::trackCloud(const cloudFeature &prev_cloud_feature,
             //     s = (surf_points_flat->points[idx].intensity - int(surf_points_flat->points[idx].intensity)) / SCAN_PERIOD;
             // else
             //     s = 1.0;
+
+            //构建点到面的距离残差
             LidarScanPlaneNormFactor *f = new LidarScanPlaneNormFactor(feature.point_, feature.coeffs_, s);
             problem.AddResidualBlock(f, loss_function, para_pose);
         }
@@ -86,6 +97,8 @@ Pose LidarTracker::trackCloud(const cloudFeature &prev_cloud_feature,
             //     s = (corner_points_sharp->points[feature.idx_].intensity - int(corner_points_sharp->points[idx].intensity)) / SCAN_PERIOD;
             // else
             //     s = 1.0;
+
+            //构建点到直线的距离残差
             LidarScanEdgeFactorVector *f = new LidarScanEdgeFactorVector(feature.point_, feature.coeffs_, s);
             problem.AddResidualBlock(f, loss_function, para_pose);
             if (CHECK_JACOBIAN)

@@ -37,7 +37,8 @@
 
 /// Adapted from https://github.com/laboshinl/loam_velodyne/blob/master/include/loam_velodyne/CircularBuffer.h
 
-/** \brief Simple circular buffer implementation for storing data history.
+/** [note]
+ * \brief Simple circular buffer implementation for storing data history.
  *
  * @tparam T The buffer element type.
  */

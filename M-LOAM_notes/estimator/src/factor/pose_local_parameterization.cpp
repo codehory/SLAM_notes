@@ -19,6 +19,13 @@ void PoseLocalParameterization::setParameter()
     V_update_ = Eigen::Matrix<double, 6, 6>::Identity();
 }
 
+/*!
+ * @brief  重载的Plus函数给出了四元素+三平移量的更新方法
+ * @param x  优化前的参数
+ * @param delta 增量
+ * @param x_plus_delta 更新后的参数
+ * @return
+ */
 // state update
 // description of update rule: LIC-Fusion: LiDAR-Inertial-Camera Odometry, IROS 2019
 // description of solution remapping: On Degeneracy of Optimization-based State Estimation Problems, ICRA 2016
@@ -31,6 +38,7 @@ bool PoseLocalParameterization::Plus(const double *x, const double *delta, doubl
     Eigen::Map<const Eigen::Matrix<double, 6, 1> > dx(delta); // dx = [dp, dq]
     Eigen::Matrix<double, 6, 1> dx_update = V_update_ * dx;
     Eigen::Vector3d dp(dx_update.head<3>());
+    // deltaQ是实现角度到四元数组的变换
     Eigen::Quaterniond dq = Utility::deltaQ(dx_update.tail<3>());
 
     // Eigen::Map<const Eigen::Vector3d> dp(delta);
@@ -44,8 +52,21 @@ bool PoseLocalParameterization::Plus(const double *x, const double *delta, doubl
     return true;
 }
 
-// calculate the jacobian of [p, q] w.r.t [dp, dq]
-// turtial: https://blog.csdn.net/hzwwpgmwy/article/details/86490556
+/*!  calculate the jacobian of [p, q] w.r.t [dp, dq]
+ *   turtial: https://blog.csdn.net/hzwwpgmwy/article/details/86490556
+ *   j =  1 0 0 0 0 0
+ *        0 1 0 0 0 0
+ *        0 0 1 0 0 0
+ *        0 0 0 1 0 0
+ *        0 0 0 0 1 0
+ *        0 0 0 0 0 1
+ *        0 0 0 0 0 0
+ *
+ *   7行6列 对应于7D姿态，前6个对应于3D旋转和平移，最后一个分量表示比例因子的标量。其中每一行对应一个维度应用于姿势的扰动，每一列对应于局部参数化空间的一个维度。
+ *   雅可比行列式的前6行设置为单位矩阵，这意味着姿态的6个维度中的任何一个扰动（3个用于旋转，3个用于平移）将导致局部参数化相同维度的相应扰动空间。
+ *   雅可比行列式的底行设置为零，这意味着姿势的比例因子的扰动不会导致局部参数化空间中的任何扰动。
+ */
+
 bool PoseLocalParameterization::ComputeJacobian(const double *x, double *jacobian) const
 {
     Eigen::Map<Eigen::Matrix<double, 7, 6, Eigen::RowMajor> > j(jacobian);

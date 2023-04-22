@@ -23,7 +23,7 @@
 
 using namespace common;
 
-// a regularized term
+// a regularized term  6:残差项的维度 7:待优化变量的维度
 class PriorFactor : public ceres::SizedCostFunction<6, 7>
 {
 public:
